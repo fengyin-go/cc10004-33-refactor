@@ -30,6 +30,14 @@ def list_entries(
     return PageResult(items=items, total=total, page=page, size=size)
 
 
+# 静态路径必须声明在 /{entry_id} 之前，否则「export」会被当成 entry_id 解析。
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出数据集管理清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "datastore", "total": total, "items": items}
+
+
 @router.get("/{entry_id}", response_model=dict)
 def get_entry(entry_id: int) -> dict:
     """读取单条数据集定义明细；不存在时给出可读的错误说明。"""
@@ -37,6 +45,18 @@ def get_entry(entry_id: int) -> dict:
     if entry is None:
         raise HTTPException(status_code=404, detail=f"数据集定义 {entry_id} 不存在或已归档")
     return entry
+
+
+@router.get("/{entry_id}/shareable-definition", response_model=dict)
+def get_shareable_definition(entry_id: int) -> dict:
+    """读取只读的可分享定义：仅含白名单展示字段，不含内部簿记信息。
+
+    该视图用于跨模块分享场景的预览与核对，是只读投影，不会改写原始定义。
+    """
+    definition = service.shareable_definition(entry_id)
+    if definition is None:
+        raise HTTPException(status_code=404, detail=f"数据集定义 {entry_id} 不存在或已归档")
+    return definition.to_dict()
 
 
 @router.post("", response_model=ActionResult)
@@ -56,10 +76,3 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出数据集管理清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "datastore", "total": total, "items": items}

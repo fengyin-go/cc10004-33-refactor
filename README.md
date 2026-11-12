@@ -75,5 +75,25 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 数据分享的两个边界
+
+数据分享把公开读取与内部编辑分成两条互不可达的边界：
+
+- **内部管理边界**：`/api/share`、`/api/datastore`（服务见 `app/services/share.py`、
+  `app/services/datastore.py`）。持有分享密码、有效期、负责人等完整配置；所有返回值都是
+  仓库记录的深拷贝，修改返回对象不会回写原记录，响应契约保持不变。
+- **公开只读边界**：`GET /api/public/shares/{链接id}?password=...`
+  （服务见 `app/services/public_share.py`）。只凭链接 id + 访问密码做授权裁决，
+  输出走字段白名单投影，不含访问密码、内部簿记字段与负责人信息；未生效或已撤销的链接
+  在服务端直接拒绝（404/403），不依赖前端隐藏。
+- 两个边界共用 `app/services/dataset_catalog.py` 里的稳定数据集引用
+  （`DatasetRef` / `ShareableDataset`）：历史链接按「目标数据集」名称解析，
+  同时兼容按数据集编号关联的链接；数据集管理另提供
+  `GET /api/datastore/{id}/shareable-definition` 只读可分享定义。
+- 授权裁决（查找 → 状态校验 → 密码校验 → 投影）在仓库锁内一次完成，并发撤销与读取
+  不会拼出撤销前后的混合字段；投影缓存按授权版本号区分，每次状态流转都会推进版本并
+  作废旧缓存，缓存不会延长授权有效期。
+- 回归测试：`cd backend && .venv/bin/python -m unittest app.tests.test_share_boundaries -v`。
+
 领域：数据工程
 子方向：数据分析与数据应用
